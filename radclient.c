@@ -28,6 +28,7 @@
 #include "mschap.h"
 #include "smbdes.h"
 /*end Microsoft*/
+#include "radeap.h"
  
 #include <errno.h>
 #include <stdio.h>
@@ -75,11 +76,11 @@ static VALUE_PAIR* mschapv1_encode(VALUE_PAIR **request, const char *password,si
 		      response->vp_octets + 26);
 	return *request;
 }
+
 /*
  * RFC 2875 defined
  *Microsoft CHAP v2 encode
  */
-
 static void generate_ntresponse(uint8_t* authchallenge,uint8_t* peerchallenge,
         const char* username,size_t len1,const char* pwd,size_t len2,uint8_t* response)
 {
@@ -90,6 +91,7 @@ static void generate_ntresponse(uint8_t* authchallenge,uint8_t* peerchallenge,
     mschap_ntpwdhash(nthash,pwd,len2); 
     smbdes_mschap(nthash,challenge,response);
 }
+
 static VALUE_PAIR* mschapv2_encode(VALUE_PAIR **request,const char* username,size_t len1,
 	const char *password,size_t pwdlen)
 {
@@ -122,12 +124,15 @@ static VALUE_PAIR* mschapv2_encode(VALUE_PAIR **request,const char* username,siz
     }
     
 	response->vp_octets[49] = 0x00; // Flag
-	generate_ntresponse(challenge->vp_octets,response->vp_octets + 2,username,len1,password,pwdlen,response->vp_octets + 26);
+	generate_ntresponse(challenge->vp_octets,response->vp_octets + 2,
+		username,len1,password,pwdlen,response->vp_octets + 26);
+
 	return *request;
 }
 
-RADIUS_PACKET* rad_request_packet_create(const char* username,size_t len1,const char* password,size_t len2,uint8_t auth_type)
-{
+static RADIUS_PACKET*
+rad_request_packet_create_noeapmd5(const char* username,size_t len1,
+	const char* password,size_t len2,uint8_t auth_type) {
 	RADIUS_PACKET* request = NULL;
 	VALUE_PAIR* vps = NULL;
 	VALUE_PAIR* vp = NULL;
@@ -212,13 +217,32 @@ RADIUS_PACKET* rad_request_packet_create(const char* username,size_t len1,const 
 	request->src_port = 0;
 
 	return request;
+
 failed:
 	if(vps) pairfree(&vps);
 	if(request) rad_free(&request);
+
 	return NULL;
 }
 
-int rad_send_request(RADIUS_PACKET* request,const char* secret,const char* password)
+RADIUS_PACKET* 
+rad_request_packet_create(const char* username,size_t len1,
+	const char* password,size_t len2,uint8_t auth_type)
+{
+	RADIUS_PACKET* rp = NULL;
+
+	if(auth_type == EAPMD5) {
+		rp = rad_create_eap_response(username,len1);
+	} else {
+		rp = rad_request_packet_create_noeapmd5(username,len1,
+			password,len2,auth_type);
+	}
+
+	return rp;
+}
+
+int 
+rad_send_request(RADIUS_PACKET* request,const char* secret,const char* password)
 {
 	if(rad_send(request,NULL,secret) < 0)
 		return -1;

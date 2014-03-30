@@ -1,6 +1,7 @@
 #ifndef RADCLIENT_H
 #define RADCLIENT_H
 #include "libradius.h"
+#include "radeap.h"
 
 #ifdef __cplusplus
 extern "C" {
